@@ -1,0 +1,93 @@
+A Python AI prompt for generating Proxy1 server (PC Client) code for a P2P network (IPFS).
+Client Proxy1 is used with VPS Proxy2
+The generated code successfully displayed static websites across 27 peers.
+
+Prompt
+
+STRUCTURED PROMPT FOR GENERATING AN IPFS PROXY CLIENT
+1. GOAL AND CONTEXT
+Create a Python 3 proxy client script that accepts HTTP requests from a browser, wraps them in a custom framing protocol, and routes them through an IPFS P2P tunnel. The script should operate in Browser-to-IPFS mode, dynamically establishing local tunnels via the ipfs p2p forward CLI and providing bidirectional data transfer with encoding/decoding. 2. TECHNOLOGY STACK AND DEPENDENCIES
+Language: Python 3.x
+Standard Libraries: socket, threading, binascii, subprocess, time, re
+External Dependency: Installed and running ipfs daemon (Kubo/Go-IPFS or similar), accessible in $PATH
+Network Protocol: TCP (AF_INET, SOCK_STREAM)
+Execution Model: Multithreaded (threading), each client request is processed in a separate daemon thread
+
+3. CONFIGURATION CONSTANTS
+Variable Name
+Type
+Value
+Purpose
+LISTEN_IP
+str
+"10.10.0.1"
+Local IP address to listen for incoming browser connections
+LISTEN_PORT
+int
+8443
+Proxy server TCP port
+SERVER_PEER_ID
+str
+"12D3Ko74Hsk1DYv1SQY64nC8zub3x63D7tBjde7ZQaroUgdpQ6cz"
+Peer ID of the remote IPFS node to which the tunnel will connect
+PROTOCOL
+str
+"/x/http-proxy/1.0.0"
+User protocol name for IPFS p2p forward
+HTTP_PREFIX
+bytes
+b"GET /wiki/HTTP/1.1\r\nHost: en.euwiki.io\r\nUser-Agent: Mozilla/5.0...\r\n\r\n"
+Fixed HTTP header used as frame prefix
+SEPARATOR
+bytes
+b"\n===END===\n"
+Separator between prefix and HEX data
+
+4. FUNCTION SPECIFICATION
+extract_host(data: bytes) -> str
+Input: Raw bytes of the HTTP request
+Logic: Decodes to ASCII, ignoring errors. Searches for CONNECT <host> or the Host: <host> header using re.search. Returns the found host or "unknown" on error/no match.
+Output: str
+encode_data(data: bytes) -> bytes
+Input: Raw data to send
+Logic: Converts data to HEX using binascii.hexlify(), appends \n. Generates a frame: HTTP_PREFIX + SEPARATOR + hex_data.
+Output: bytes
+decode_data(data: bytes) -> bytes
+Input: Frame with prefix and hex strings separated by \n
+Logic: If it starts with HTTP_PREFIX, truncates it and the SEPARATOR. Splits the remainder on \n, removes empty lines, and decodes each string from hex using binascii.unhexlify(). Concatenates the result. Decoding errors are ignored.
+Output: bytes
+forward_to_tunnel(tunnel_sock: socket, client_sock: socket) -> None
+Direction: Client → Tunnel
+Logic: In a loop, reads up to 8192 bytes from client_sock, encodes using encode_data(), and sends to tunnel_sock. Aborts upon receiving empty data. Wrapped in try/except.
+forward_to_client(tunnel_sock: socket, client_sock: socket) -> None
+Direction: Tunnel → Client
+Logic: Reads chunks from tunnel_sock and stores them in buffer. If \n is present, divides the buffer into lines and passes each line (appended with \n) to decode_data(). If decoding is successful, sends the result to client_sock. Works in a loop.
+handle_browser(client_sock: socket, client_addr: tuple) -> None
+Role: Handler for a single client connection
+Logic:
+Reads the initial request, retrieves the host.
+Finds a free local port via a temporary socket (bind(127.0.0.1, 0)).
+Starts subprocess.Popen(['ipfs', 'p2p', 'forward', PROTOCOL, f'/ip4/127.0.0.1/tcp/{local_port}', f'/p2p/{SERVER_PEER_ID}'], stdout=DEVNULL, stderr=DEVNULL).
+Waits 2 seconds (time.sleep(2)).
+Connects to 127.0.0.1:local_port, sets TCP_NODELAY.
+Sends an encoded initial request.
+Starts two threads (forward_to_tunnel, forward_to_client) with daemon=True.
+Blocks on join().
+In finally: closes the tunnel socket, terminates the subprocess, closes the client socket. main() -> None
+Logic: Creates a server socket, sets SO_REUSEADDR, binds to LISTEN_IP:LISTEN_PORT, and listens on a queue of up to 100 connections. Accepts connections in an infinite loop, sets TCP_NODELAY, and starts handle_browser in a daemon thread. Handles KeyboardInterrupt for graceful shutdown.
+
+5. NETWORK PARAMETERS AND IP ADDRESSING
+External interface: 10.10.0.1:8443 (listening)
+Local tunnel: 127.0.0.1:<dynamic_port>
+Remote IPFS peer: /p2p/{SERVER_PEER_ID} (determined by the IPFS daemon)
+Socket options: SO_REUSEADDR (server), TCP_NODELAY (client and tunnel)
+IPFS protocol: Use the ipfs p2p forward <protocol> <local_multiaddr> <remote_multiaddr> command
+6. AI GENERATION INSTRUCTIONS
+Implement the script strictly according to the specified function signature and configuration.
+Preserve the exact byte order for HTTP_PREFIX and SEPARATOR. Ensure proper handling of partial reads and TCP stream fragmentation through buffering in forward_to_client.
+Use daemon=True for forwarding streams so they don't block on exit when the connection is closed.
+Add proper subprocess and socket lifecycle management in try/finally blocks.
+The code must be compatible with Python 3.8+ and not use third-party packages.
+Provide a complete working script without stubs.
+
+                                                   
